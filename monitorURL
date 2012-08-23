@@ -74,16 +74,13 @@ def doPing(def opts) {
                 if (response.statusLine.statusCode == 200){
                     msg = "${new Date()} :: UP!"
                     println msg
-                } else {
-                    msg = "${new Date()} :: There might be a problem! -> ${response.statusLine.statusCode}"
-                    println msg
-                    sendSMS(msg,opts)
                 }
             }
         } catch( e ){
             println "${new Date()}"
+            println e.message
             e.printStackTrace()
-            sendSMS("There was an error when connecting to the server, it might be down!",opts)
+            sendSMS("Error when connecting to ${opts.server}! -> ${e.message}",opts)
         }
 
         if (opts.intervalSeconds > 0){
