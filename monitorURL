@@ -1,0 +1,106 @@
+#!/usr/bin/env groovy
+/*
+ * author: Steve Good
+ * email: steve@stevegood.org
+ * url: http://stevegood.org/
+ * date: 2012-08-23
+ * requirements:
+ *      - groovy 2.0.1 (groovy needs to be in your environment path)
+ *      - if you get errors downloading dependencies you might need to modify or create a grapeConfig.xml file in your .groovy folder (on *nix systems this is usually found at ~/.groovy)
+ *          - find an example at the following url: https://raw.github.com/groovy/groovy-core/master/src/main/groovy/grape/defaultGrapeConfig.xml
+ */
+
+@Grab(group='org.codehaus.groovy.modules.http-builder', module='http-builder', version='0.5.2')
+@Grab(group='commons-httpclient',module='commons-httpclient',version='3.1')
+
+import groovyx.net.http.HTTPBuilder
+import org.apache.commons.httpclient.*
+import org.apache.commons.httpclient.methods.PostMethod
+
+/* ************************************************ */
+/*              Edit these preferences              */
+/* ************************************************ */
+
+def options = [
+        server: "http://google.com/", // The url you want to monitor
+        intervalSeconds: 600, // how many seconds between intervals? Specify 0 for no intervals (used if the intervals are executed from an external source like cron)
+        sid: "", // Twilio sid
+        authToken: "", // Twilio auth token
+        fromPhone: "", // the phone number that the sms will come from, this is usually your Twilio number. ex: 817-555-1234
+        toPhone: "", // Comma delimited list of phone numbers that you want the SMS sent to. ex: 817-555-1234
+        smsOnStart: false, // Send an SMS when the script starts
+        smsOnStartMessage: "Site monitoring script started at ${new Date().format('H:mm:ss')} on ${new Date().format('yyyy-MM-dd')}" // The startup SMS message
+]
+
+/* ************************************************ */
+/*  Editing below will impact how the script runs   */
+/* ************************************************ */
+
+def sendSMS(def message, def opts){
+    // send an SMS
+    if (opts.sid != "" && opts.authToken != "" && message != ""){
+        String twilioHost = "api.twilio.com"
+        String sid = opts.sid
+        String authToken = opts.authToken
+
+        def hc = new HostConfiguration()
+        hc.setHost(twilioHost, 443, "https")
+        def url = "/2010-04-01/Accounts/$sid/SMS/Messages"
+
+        def client = new HttpClient()
+        Credentials defaultcreds = new UsernamePasswordCredentials(sid, authToken)
+        client.getState().setCredentials(null, null, defaultcreds)
+
+        opts.toPhone.split(',')?.each { toPhn ->
+            PostMethod postMethod = new PostMethod(url)
+            postMethod.addParameter("IfMachine","Continue")
+            postMethod.addParameter("Method","POST")
+            postMethod.addParameter("From",opts.fromPhone)
+            postMethod.addParameter("To",toPhn)
+            postMethod.addParameter("Body",message)
+
+            client.executeMethod(hc, postMethod)
+
+            postMethod.releaseConnection()
+        }
+    }
+}
+
+def doPing(def opts) {
+    if (opts.server != ""){
+        try {
+            new HTTPBuilder( opts.server ).get( path:'' ) { response ->
+                def msg = ""
+                if (response.statusLine.statusCode == 200){
+                    msg = "${new Date()} :: UP!"
+                    println msg
+                } else {
+                    msg = "${new Date()} :: There might be a problem! -> ${response.statusLine.statusCode}"
+                    println msg
+                    sendSMS(msg,opts)
+                }
+            }
+        } catch( e ){
+            println "${new Date()}"
+            e.printStackTrace()
+            sendSMS("There was an error when connecting to the server, it might be down!",opts)
+        }
+
+        if (opts.intervalSeconds > 0){
+            def then = new Date()
+            then.seconds += opts.intervalSeconds
+            println "Checking again at ${then}"
+            while (new Date() <= then){
+                // do nothing
+            }
+
+            doPing( opts )
+        }
+    }
+}
+
+if (options.smsOnStart){
+    sendSMS(options.smsOnStartMessage,options)
+}
+
+doPing( options )
